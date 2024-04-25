@@ -13,7 +13,7 @@ pub(crate) struct Djikstras {
 impl Djikstras{
     pub fn new(maze: &Maze) -> Self {
         let mut min_heap = MinMaxHeap::new();
-        min_heap.push((0, (maze.start.x as usize, maze.start.y as usize)));
+        min_heap.push((0, (maze.start.0 as usize, maze.start.1 as usize)));
         Self {
             min_heap,
             distances: HashMap::new(),
@@ -62,8 +62,8 @@ impl PathFinder for Djikstras {
 
     fn get_path(&self, maze: &Maze) -> Vec<(usize, usize)> {
         let maze_width = maze.width;
-        let mut step = (maze.end.x as usize, maze.end.y as usize);
-        let start = (maze.start.x as usize, maze.start.y as usize);
+        let mut step = (maze.end.0 as usize, maze.end.1 as usize);
+        let start = (maze.start.0 as usize, maze.start.1 as usize);
         let mut path: Vec<(usize,usize)> = vec![];
         while step != start {
             path.push((step.0, step.1));

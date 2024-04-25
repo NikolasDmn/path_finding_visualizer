@@ -18,11 +18,11 @@ pub struct AStar {
 impl AStar {
     pub fn new(maze: &crate::maze::Maze) -> Self {
         let mut gscore = HashMap::new();
-        gscore.insert((maze.start.x as usize, maze.start.y as usize), 0);
+        gscore.insert((maze.start.0 as usize, maze.start.1 as usize), 0);
         let mut fscore = HashMap::new();
-        fscore.insert((maze.start.x as usize, maze.start.y as usize), Self::heuristic(maze.start.x as usize, maze.start.y as usize, maze.end.x as usize,maze.end.y as usize));
+        fscore.insert((maze.start.0 as usize, maze.start.1 as usize), Self::heuristic(maze.start.0 as usize, maze.start.1 as usize, maze.end.0 as usize,maze.end.1 as usize));
         let mut heap = MinMaxHeap::new();
-        heap.push((*fscore.get(&(maze.start.x as usize, maze.start.y as usize)).unwrap(), (maze.start.x as usize, maze.start.y as usize)));
+        heap.push((*fscore.get(&(maze.start.0 as usize, maze.start.1 as usize)).unwrap(), (maze.start.0 as usize, maze.start.1 as usize)));
         Self {
             close_set: HashSet::new(),
             came_from: HashMap::new(),
@@ -68,7 +68,7 @@ impl PathFinder for AStar {
             if tentative_gscore < *self.gscore.get(&(nx,ny)).unwrap_or(&usize::MAX) {
                 self.came_from.insert((nx,ny), (x,y));
                 self.gscore.insert((nx,ny), tentative_gscore);
-                self.fscore.insert((nx,ny), tentative_gscore + Self::heuristic(nx,ny, maze.end.x as usize, maze.end.y as usize));
+                self.fscore.insert((nx,ny), tentative_gscore + Self::heuristic(nx,ny, maze.end.0 as usize, maze.end.1 as usize));
                 self.heap.push((*self.fscore.get(&(nx,ny)).unwrap(), (nx,ny)));
             }
             

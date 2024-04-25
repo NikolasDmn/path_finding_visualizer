@@ -13,7 +13,7 @@ pub(crate) struct DFS {
 impl DFS {
     pub fn new(maze: &Maze) -> Self {
         Self {
-            stack: vec![(maze.start.x as usize, maze.start.y as usize, vec![(maze.start.x as usize, maze.start.y as usize)])],
+            stack: vec![(maze.start.0 as usize, maze.start.1 as usize, vec![(maze.start.0 as usize, maze.start.1 as usize)])],
             path: None,
             visited: HashSet::new(),
             traversed_cells: 0,

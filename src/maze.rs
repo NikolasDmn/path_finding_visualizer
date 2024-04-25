@@ -1,9 +1,9 @@
-use bevy::prelude::{Color, Commands, Component, Query, Res, Resource, Sprite, SpriteBundle, Transform, Window};
+use bevy::ecs::entity::Entity;
+use bevy::prelude::{Color, Commands, Component, Query, Res, Resource, Sprite, SpriteBundle, Transform, Window, With};
 use bevy::math::Vec2;
 use std::collections::VecDeque;
 use rand::thread_rng;
 use rand::prelude::SliceRandom;
-use crate::CELL_SIZE;
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub enum CellState {
@@ -17,15 +17,15 @@ pub enum CellState {
 
 #[derive(Component)]
 pub struct Cell{
-    pub position: Vec2,
+    pub position: (usize, usize),
     pub type_: CellState
 }
 
 #[derive(Resource)]
 pub struct CellSize(pub usize);
 
-fn get_index(point: &Vec2, width: usize) -> usize {
-    point.y as usize * width + point.x as usize
+fn get_index(point: (usize,usize), width: usize) -> usize {
+    point.1 * width + point.0
 }
 
 
@@ -39,11 +39,9 @@ fn carve_maze(x: usize, y: usize, width: usize, height: usize, maze: &mut Vec<bo
         let nx = x as isize + dx as isize;
         let ny = y as isize + dy as isize;
 
-        // Check if the new position is within bounds
         if nx > 0 && (nx as usize)< width  && ny > 0 && (ny as usize) < height  {
             let nx = nx as usize;
             let ny = ny as usize;
-            // Ensure we're not accessing out of bounds
             if maze[ny * width + nx] {
                 let mid_x = (x as isize + (dx / 2)) as usize;
                 let mid_y = (y as isize + (dy / 2)) as usize;
@@ -55,13 +53,12 @@ fn carve_maze(x: usize, y: usize, width: usize, height: usize, maze: &mut Vec<bo
     }
 }
 
-fn get_appropriate_endpoint(maze: &Vec<bool>, width: usize, height: usize, start: Vec2) -> Vec2 {
-    let directions: [(f32,f32);4] = [(0., 1.), (0., -1.), (1., 0.), (-1., 0.)]; // Four cardinal directions
+fn get_appropriate_endpoint(maze: &Vec<bool>, width: usize, height: usize, start: (usize,usize)) -> (usize,usize) {
     let mut queue = VecDeque::new();
     let mut visited = vec![false; width * height]; // Visited flag for each cell
 
     queue.push_back((start, 0)); // (x, y, distance)
-    visited[get_index(&start, width)] = true;
+    visited[get_index(start, width)] = true;
 
     let mut farthest_point = start;
     let mut max_distance = 0;
@@ -72,15 +69,16 @@ fn get_appropriate_endpoint(maze: &Vec<bool>, width: usize, height: usize, start
             max_distance = dist;
             farthest_point = point;
         }
-
+        let directions: Vec<(usize,usize)> = [(0, 1), (0, -1), (1, 0), (-1, 0)]
+                        .iter()
+                        .map(|&(x,y)| (point.0 as isize + x, point.1 as isize + y))
+                        .filter(|&(nx,ny)| nx >= 0 && nx < width as isize && ny >= 0 && ny < height as isize)
+                        .map(|(nx,ny)| (nx as usize, ny as usize))
+                        .filter(|&(nx,ny)| !visited[get_index((nx,ny), width)] && !maze[get_index((nx,ny), width)]).collect::<Vec<(usize,usize)>>();
         // Explore neighbors
-        for &(dx, dy) in &directions {
-            let new_point = Vec2::new(point.x + dx, point.y + dy);
-            let index = get_index(&new_point, width);
-            if new_point.x < width as f32 && new_point.y < height as f32 && !visited[index] && !maze[index] {
-                visited[index] = true;
-                queue.push_back((new_point, dist + 1));
-            }
+        for &new_point in &directions {
+            visited[get_index(new_point, width)] = true;
+            queue.push_back((new_point, dist + 1));
         }
     }
 
@@ -94,11 +92,14 @@ pub fn create_maze(width: usize, height: usize) -> Maze {
     let start_y = rand::random::<usize>() % height;
     bit_maze[start_y * width + start_x] = false;
     carve_maze(start_x, start_y, width, height, &mut bit_maze);
-    let start = Vec2::new(start_x as f32, start_y as f32);
+    let start = (start_x, start_y);
     let end = get_appropriate_endpoint(&bit_maze, width, height, start);
-    let mut cells = bit_maze.into_iter().map(|cell| if cell{CellState::WALL} else {CellState::UNEXPLORED}).collect::<Vec<CellState>>();
-    cells[get_index(&start, width)] = CellState::START;
-    cells[get_index(&end, width)] = CellState::END;
+    let mut cells = bit_maze
+                    .into_iter()
+                    .map(|cell| if cell{CellState::WALL} else {CellState::UNEXPLORED})
+                    .collect::<Vec<CellState>>();
+    cells[get_index(start, width)] = CellState::START;
+    cells[get_index(end, width)] = CellState::END;
     Maze {
         start,
         end,
@@ -110,8 +111,8 @@ pub fn create_maze(width: usize, height: usize) -> Maze {
 
 #[derive(Resource)]
 pub struct Maze {
-    pub(crate) start: Vec2,
-    pub(crate) end: Vec2,
+    pub(crate) start: (usize,usize),
+    pub(crate) end: (usize,usize),
     pub(crate) width: usize,
     pub(crate) height: usize,
     pub(crate) cells: Vec<CellState>,
@@ -145,8 +146,11 @@ fn get_color(cell: &CellState) -> Color {
     }
 }
 
-pub fn initial_maze_render(mut commands: Commands, maze: Res<Maze>, cell_size: Res<CellSize>, window_query: Query<&Window>) {
-    println!("initial_maze_render");
+pub fn initial_maze_render(mut commands: Commands, maze: Res<Maze>, cell_size: Res<CellSize>,
+    mut query: Query<Entity, With<Cell>>, window_query: Query<&Window>) {
+    for entity in query.iter_mut() {
+        commands.entity(entity).despawn();
+    }
     let window = window_query.single();
     let x_offset = window.resolution.width() / 2.;
     let y_offset = window.resolution.height() / 2.;
@@ -166,7 +170,7 @@ pub fn initial_maze_render(mut commands: Commands, maze: Res<Maze>, cell_size: R
                 ..Default::default()
                 },
                 Cell {
-                position:Vec2::new(x as f32,y as f32),
+                position:(x,y),
                 type_: cell.clone()
                 }
             ));
@@ -182,7 +186,7 @@ pub fn update_maze(maze: Res<Maze>, mut query:  Query<(&Cell, &mut Sprite)>) {
 
             }
             _ => {
-                sprite.color = get_color(&maze.get(cell.position.x as usize, cell.position.y as usize));
+                sprite.color = get_color(&maze.get(cell.position.0 as usize, cell.position.1 as usize));
             }
         }
     }
