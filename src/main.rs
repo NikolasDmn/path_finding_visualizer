@@ -5,7 +5,7 @@ use bevy::input::mouse::{MouseButtonInput, MouseWheel};
 use bevy::prelude::*;
 use bevy::ui::ContentSize;
 use bevy::window::WindowResolution;
-use maze::{render_maze, Cell, CellSize, CellState, Maze};
+use maze::{render_maze, Cell, CellSize, CellState, Maze, CellAssets};
 use crate::path_finders::dfs::DFS;
 use crate::path_finders::djikstras::Djikstras;
 use crate::path_finders::a_star::AStar;
@@ -30,21 +30,31 @@ fn toggle_solve(mut controls: ResMut<Controls>, keyboard_input: Res<ButtonInput<
     if keyboard_input.just_pressed(KeyCode::Space) {
         controls.play = !controls.play;
     }
-    
 }
 
-
+fn setup_assets(mut commands: Commands, asset_server: Res<AssetServer>, mut materials: ResMut<Assets<ColorMaterial>>) {
+    let assets = CellAssets {
+        start_tile: asset_server.load("start_tile.png"),
+        end_tile: asset_server.load("end_tile.png"),
+        wall_tile: asset_server.load("wall_tile.png"),
+        unexplored_tile: asset_server.load("unexplored_tile.png"),
+        explored_tile: asset_server.load("explored_tile.png"),
+        path_tile: asset_server.load("path_tile.png"),
+    };
+    commands.insert_resource(assets);
+}
 fn reset_maze(
     commands: Commands,
     mut controls: ResMut<Controls>, 
     mut window_query: Query<&mut Window>,
-    query: Query<Entity, With<Cell>>,) {
+    query: Query<Entity, With<Cell>>,
+    mut solver: ResMut<Solver>) {
 
     controls.play = false;
     let maze = maze::create_maze(controls.maze_size.0, controls.maze_size.1);
-    let cell_size = fit_window_to_maze(&mut window_query, &maze);
+    let cell_size = get_cell_size(&mut window_query, &maze);
     let solver = Solver {
-        solver: Box::new(AStar::new(&maze))
+        solver: solver.solver.get_new_solver(&maze)
     };
 
     create_resources(commands, cell_size, solver, maze);
@@ -55,7 +65,26 @@ fn reset_maze(
 fn maze_change(keyboard_input: Res<ButtonInput<KeyCode>>, controls: Res<Controls>) -> bool {
     keyboard_input.just_pressed(KeyCode::KeyR) || controls.maze_changes
 }
-
+fn change_algorithm(mut solver: ResMut<Solver>, mut maze: ResMut<Maze>, mut controls: ResMut<Controls>, keyboard_input: Res<ButtonInput<KeyCode>>) {
+    if keyboard_input.just_pressed(KeyCode::Digit1) {
+        println!("Changing to A*");
+        solver.solver = Box::new(AStar::new(&maze));
+        controls.play = false;
+        maze.reset_explored_paths()
+    }
+    if keyboard_input.just_pressed(KeyCode::Digit2) {
+        println!("Changing to Djikstras");
+        solver.solver = Box::new(Djikstras::new(&maze));
+        controls.play = false;
+        maze.reset_explored_paths()
+    }
+    if keyboard_input.just_pressed(KeyCode::Digit3) {
+        println!("Changing to DFS");
+        solver.solver = Box::new(DFS::new(&maze));
+        controls.play = false;
+        maze.reset_explored_paths()
+    }
+}
 fn change_maze_size(mut controls: ResMut<Controls>, keyboard_input: Res<ButtonInput<KeyCode>>){
     if keyboard_input.just_pressed(KeyCode::ArrowDown){
         controls.maze_size = (controls.maze_size.0, controls.maze_size.1+1);
@@ -83,7 +112,7 @@ fn create_resources(mut commands: Commands, cell_size: usize, solver: Solver, ma
 }
 fn setup(mut commands: Commands, mut window_query: Query<&mut Window>) {
     let maze = maze::create_maze(30,30);
-    let cell_size = fit_window_to_maze(&mut window_query, &maze);
+    let cell_size = get_cell_size(&mut window_query, &maze);
     let solver = Solver {
         solver: Box::new(AStar::new(&maze))
     };
@@ -92,8 +121,8 @@ fn setup(mut commands: Commands, mut window_query: Query<&mut Window>) {
 }
 
 
-fn fit_window_to_maze(window_query: &mut Query<&mut Window>, maze: &Maze) -> usize {
-    let mut window = window_query.single_mut();
+fn get_cell_size(window_query: &mut Query<&mut Window>, maze: &Maze) -> usize {
+    let window = window_query.single();
     let cell_size = if window.resolution.width() > window.resolution.height() {
         window.resolution.height() as usize / maze.height
     } else {
@@ -143,19 +172,20 @@ fn main() {
                 ..default()
             }),
             ..default()
-        }))
+        }).set(ImagePlugin::default_nearest()))
         .insert_resource(Controls {
             play: true,
             maze_size: (30,30),
             maze_changes: false,
         })
         .add_systems(Startup, setup)
-        .add_systems(Startup, maze::render_maze.after(setup))
+        .add_systems(Startup, setup_assets.after(setup))
+        .add_systems(Startup, maze::render_maze.after(setup_assets))
         .add_systems(Update, run_solver.run_if(should_run_solver))
         .add_systems(Update, maze::update_maze.after(run_solver).after(render_maze))
         .add_systems(Update, toggle_solve)
         .add_systems(Update, change_maze_size)
         .add_systems(Update, (reset_maze, render_maze.after(reset_maze)).run_if(maze_change))
-        .add_event::<MouseWheel>()
+        .add_systems(Update, change_algorithm)
         .run();
 }

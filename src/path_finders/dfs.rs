@@ -34,6 +34,7 @@ impl PathFinder for DFS {
 
         maze.set(x,y, CellState::EXPLORED);
         self.visited.insert((x,y));
+        self.traversed_cells += 1;
         let directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]
             .into_iter()
             .map(|(dx,dy)| (x as isize + dx,  y as isize + dy))
@@ -66,5 +67,9 @@ impl PathFinder for DFS {
         } else {
             0.
         }
+    }
+    
+    fn get_new_solver(&mut self, maze: &Maze) -> Box<dyn PathFinder + Sync + Send> {
+        Box::new(DFS::new(maze))
     }
 }

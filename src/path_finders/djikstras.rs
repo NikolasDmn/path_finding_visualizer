@@ -97,4 +97,8 @@ impl PathFinder for Djikstras {
     fn get_accuracy(&self, maze: &Maze) -> f32  {
          self.get_path(maze).len() as f32 / self.traversed_cells as f32
     }
+    
+    fn get_new_solver(&mut self, maze: &Maze) -> Box<dyn PathFinder + Sync + Send> {
+        Box::new(Djikstras::new(maze))
+    }
 }

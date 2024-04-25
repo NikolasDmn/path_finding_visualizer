@@ -1,9 +1,11 @@
+use bevy::asset::Handle;
 use bevy::ecs::entity::Entity;
 use bevy::prelude::{Color, Commands, Component, Query, Res, Resource, Sprite, SpriteBundle, Transform, Window, With};
 use bevy::math::Vec2;
+use bevy::render::texture::Image;
 use bevy::utils::dbg;
 use std::collections::VecDeque;
-use rand::thread_rng;
+use rand::{thread_rng, Rng};
 use rand::prelude::SliceRandom;
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
@@ -22,6 +24,17 @@ pub struct Cell{
     pub type_: CellState
 }
 
+
+#[derive(Resource)]
+pub struct CellAssets {
+    pub start_tile: Handle<Image>,
+    pub end_tile: Handle<Image>,
+    pub wall_tile: Handle<Image>,
+    pub unexplored_tile: Handle<Image>,
+    pub explored_tile: Handle<Image>,
+    pub path_tile: Handle<Image>,
+
+}
 #[derive(Resource)]
 pub struct CellSize(pub usize);
 
@@ -57,7 +70,7 @@ fn carve_maze(x: usize, y: usize, width: usize, height: usize, maze: &mut Vec<bo
 fn get_appropriate_endpoint(maze: &Vec<bool>, width: usize, height: usize, start: (usize,usize)) -> (usize,usize) {
     let mut queue = VecDeque::new();
     let mut visited = vec![false; width * height]; // Visited flag for each cell
-
+    let mut furthest_points = vec![];
     queue.push_back((start, 0)); // (x, y, distance)
     visited[get_index(start, width)] = true;
 
@@ -68,7 +81,7 @@ fn get_appropriate_endpoint(maze: &Vec<bool>, width: usize, height: usize, start
         // Update farthest point
         if dist > max_distance {
             max_distance = dist;
-            farthest_point = point;
+            furthest_points.push(point);
         }
         let directions: Vec<(usize,usize)> = [(0, 1), (0, -1), (1, 0), (-1, 0)]
                         .iter()
@@ -82,8 +95,19 @@ fn get_appropriate_endpoint(maze: &Vec<bool>, width: usize, height: usize, start
             queue.push_back((new_point, dist + 1));
         }
     }
+    furthest_points.sort_by(|&a, &b| {
+        let dist_a = (a.0 as isize - start.0 as isize).abs() + (a.1 as isize - start.1 as isize);
+        let dist_b = (b.0 as isize - start.0 as isize).abs() + (b.1 as isize - start.1 as isize);
+        dist_a.cmp(&dist_b)
+    });
 
-    farthest_point
+    let half_index = furthest_points.len() / 2;
+    let biggest_half = &furthest_points[half_index..];
+
+    // Step 3: Pick a random element from the biggest half
+    let mut rng = thread_rng();
+    let random_index = rng.gen_range(0..biggest_half.len());
+    biggest_half[random_index]
 }
 
 pub fn create_maze(width: usize, height: usize) -> Maze {
@@ -134,6 +158,15 @@ impl Maze {
         }
         self.cells[y*self.width+x] = state;
     }
+    pub fn reset_explored_paths(&mut self) {
+        self.cells = self.cells.iter().map(|cell| {
+            match cell {
+                CellState::EXPLORED => CellState::UNEXPLORED,
+                CellState::PATH => CellState::UNEXPLORED,
+                _ => cell.clone()
+            }
+        }).collect::<Vec<CellState>>();
+    } 
 }
 
 fn get_color(cell: &CellState) -> Color {
@@ -147,9 +180,21 @@ fn get_color(cell: &CellState) -> Color {
     }
 }
 
+fn get_image(cell: &CellState, assets: &Res<CellAssets>) -> Handle<Image> {
+    match cell {
+        CellState::START => assets.start_tile.clone(),
+        CellState::END => assets.end_tile.clone(),
+        CellState::WALL => assets.wall_tile.clone(),
+        CellState::UNEXPLORED => assets.unexplored_tile.clone(),
+        CellState::EXPLORED => assets.explored_tile.clone(),
+        CellState::PATH => assets.path_tile.clone(),
+    }
+}
+
 pub fn render_maze(
     mut commands: Commands, 
     maze: Res<Maze>, 
+    assets: Res<CellAssets>,
     cell_size: Res<CellSize>,
     query: Query<Entity, With<Cell>>, 
     window_query: Query<&Window>) {
@@ -161,28 +206,26 @@ pub fn render_maze(
     let window = window_query.single();
     let x_offset = window.resolution.width() / 2.;
     let y_offset = window.resolution.height() / 2.;
-    let mut counter = 0;
     for y in 0..maze.height {
         for x in 0..maze.width {
-            counter += 1;
             let index = y * maze.width + x;
             let cell = &maze.cells[index];
-            commands.spawn(get_tile_sprite(x as f32, x_offset, y as f32, y_offset, cell_size.0 as f32, cell));
+            let texture = get_image(cell, &assets);
+            commands.spawn(get_tile_sprite(x as f32, x_offset, y as f32, y_offset, cell_size.0 as f32, cell, texture));
         }
     }
 }
 
-fn get_tile_sprite(x: f32, x_offset: f32, y: f32, y_offset: f32, cell_size: f32, cell: &CellState) -> (SpriteBundle, Cell){
-        let color = get_color(&cell);
+fn get_tile_sprite(x: f32, x_offset: f32, y: f32, y_offset: f32, cell_size: f32, cell: &CellState, texture: Handle<Image>) -> (SpriteBundle, Cell){
         let x_pos = (x * cell_size) - x_offset;
         let y_pos = (y *  cell_size) - y_offset;
         (SpriteBundle {
-        transform: Transform::from_xyz(x_pos, y_pos, 0.0),
-        sprite: Sprite {
-            custom_size: Some(Vec2::new(cell_size, cell_size)),
-            color,
-            ..Default::default()},
-        ..Default::default()
+            transform: Transform::from_xyz(x_pos, y_pos, 0.0),
+            sprite: Sprite {
+                custom_size: Some(Vec2::new(cell_size, cell_size)),
+                ..Default::default()},
+            texture,
+            ..Default::default()
         },
         Cell {
         position: (x as usize,y as usize),
@@ -190,15 +233,15 @@ fn get_tile_sprite(x: f32, x_offset: f32, y: f32, y_offset: f32, cell_size: f32,
         }
     )
 }
-pub fn update_maze(maze: Res<Maze>, mut query:  Query<(&Cell, &mut Sprite)>) {
-    for (cell, mut sprite) in query.iter_mut() {
-
+pub fn update_maze(maze: Res<Maze>, mut query:  Query<(&Cell, &mut Handle<Image>)>, assets: Res<CellAssets>) {
+    
+    for (cell, mut texture) in query.iter_mut() {
         match cell.type_ {
             CellState::END | CellState::START | CellState::WALL => {
 
             }
             _ => {
-                sprite.color = get_color(&maze.get(cell.position.0 as usize, cell.position.1 as usize));
+                *texture = get_image(&maze.get(cell.position.0 as usize, cell.position.1 as usize), &assets);
             }
         }
     }
