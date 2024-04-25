@@ -1,11 +1,11 @@
 mod maze;
 mod path_finders;
-mod ui;
 
 use bevy::input::mouse::{MouseButtonInput, MouseWheel};
 use bevy::prelude::*;
 use bevy::ui::ContentSize;
-use maze::{initial_maze_render, Cell, CellSize, CellState, Maze};
+use bevy::window::WindowResolution;
+use maze::{render_maze, Cell, CellSize, CellState, Maze};
 use crate::path_finders::dfs::DFS;
 use crate::path_finders::djikstras::Djikstras;
 use crate::path_finders::a_star::AStar;
@@ -37,7 +37,8 @@ fn toggle_solve(mut controls: ResMut<Controls>, keyboard_input: Res<ButtonInput<
 fn reset_maze(
     commands: Commands,
     mut controls: ResMut<Controls>, 
-    mut window_query: Query<&mut Window>) {
+    mut window_query: Query<&mut Window>,
+    query: Query<Entity, With<Cell>>,) {
 
     controls.play = false;
     let maze = maze::create_maze(controls.maze_size.0, controls.maze_size.1);
@@ -56,19 +57,19 @@ fn maze_change(keyboard_input: Res<ButtonInput<KeyCode>>, controls: Res<Controls
 }
 
 fn change_maze_size(mut controls: ResMut<Controls>, keyboard_input: Res<ButtonInput<KeyCode>>){
-    if keyboard_input.pressed(KeyCode::ArrowDown){
+    if keyboard_input.just_pressed(KeyCode::ArrowDown){
         controls.maze_size = (controls.maze_size.0, controls.maze_size.1+1);
         controls.maze_changes = true;
     }
-    if keyboard_input.pressed(KeyCode::ArrowUp) && controls.maze_size.1 > 1 {
+    if keyboard_input.just_pressed(KeyCode::ArrowUp) && controls.maze_size.1 > 1 {
         controls.maze_size = (controls.maze_size.0, controls.maze_size.1-1);
         controls.maze_changes = true;
     }
-    if keyboard_input.pressed(KeyCode::ArrowLeft) && controls.maze_size.0 > 1{
+    if keyboard_input.just_pressed(KeyCode::ArrowLeft) && controls.maze_size.0 > 1{
         controls.maze_size = (controls.maze_size.0-1, controls.maze_size.1);
         controls.maze_changes = true;
     }
-    if keyboard_input.pressed(KeyCode::ArrowRight) {
+    if keyboard_input.just_pressed(KeyCode::ArrowRight) {
         controls.maze_size = (controls.maze_size.0+1, controls.maze_size.1);
         controls.maze_changes = true;
     }
@@ -92,13 +93,12 @@ fn setup(mut commands: Commands, mut window_query: Query<&mut Window>) {
 
 
 fn fit_window_to_maze(window_query: &mut Query<&mut Window>, maze: &Maze) -> usize {
-    let window = window_query.single();
+    let mut window = window_query.single_mut();
     let cell_size = if window.resolution.width() > window.resolution.height() {
         window.resolution.height() as usize / maze.height
     } else {
         window.resolution.width() as usize / maze.width
     };
-    
     cell_size
 }
 
@@ -139,6 +139,7 @@ fn main() {
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Maze!".into(),
+                resolution: WindowResolution::new(800., 800.),
                 ..default()
             }),
             ..default()
@@ -149,13 +150,12 @@ fn main() {
             maze_changes: false,
         })
         .add_systems(Startup, setup)
-        .add_systems(Startup, maze::initial_maze_render.after(setup))
+        .add_systems(Startup, maze::render_maze.after(setup))
         .add_systems(Update, run_solver.run_if(should_run_solver))
-        .add_systems(Update, maze::update_maze.after(run_solver).after(initial_maze_render))
+        .add_systems(Update, maze::update_maze.after(run_solver).after(render_maze))
         .add_systems(Update, toggle_solve)
-        // .add_systems(Update, change_maze_size)
-        .add_systems(Update, reset_maze.run_if(maze_change))
-        .add_systems(Update, initial_maze_render.run_if(maze_change).after(reset_maze))
+        .add_systems(Update, change_maze_size)
+        .add_systems(Update, (reset_maze, render_maze.after(reset_maze)).run_if(maze_change))
         .add_event::<MouseWheel>()
         .run();
 }

@@ -1,6 +1,7 @@
 use bevy::ecs::entity::Entity;
 use bevy::prelude::{Color, Commands, Component, Query, Res, Resource, Sprite, SpriteBundle, Transform, Window, With};
 use bevy::math::Vec2;
+use bevy::utils::dbg;
 use std::collections::VecDeque;
 use rand::thread_rng;
 use rand::prelude::SliceRandom;
@@ -109,7 +110,7 @@ pub fn create_maze(width: usize, height: usize) -> Maze {
     }
 }
 
-#[derive(Resource)]
+#[derive(Resource, Debug)]
 pub struct Maze {
     pub(crate) start: (usize,usize),
     pub(crate) end: (usize,usize),
@@ -146,41 +147,52 @@ fn get_color(cell: &CellState) -> Color {
     }
 }
 
-pub fn initial_maze_render(mut commands: Commands, maze: Res<Maze>, cell_size: Res<CellSize>,
-    mut query: Query<Entity, With<Cell>>, window_query: Query<&Window>) {
-    for entity in query.iter_mut() {
-        commands.entity(entity).despawn();
+pub fn render_maze(
+    mut commands: Commands, 
+    maze: Res<Maze>, 
+    cell_size: Res<CellSize>,
+    query: Query<Entity, With<Cell>>, 
+    window_query: Query<&Window>) {
+    
+    for cell in query.iter() {
+        commands.entity(cell).remove::<Cell>();
+        commands.entity(cell).despawn();
     }
     let window = window_query.single();
     let x_offset = window.resolution.width() / 2.;
     let y_offset = window.resolution.height() / 2.;
+    let mut counter = 0;
     for y in 0..maze.height {
         for x in 0..maze.width {
+            counter += 1;
             let index = y * maze.width + x;
             let cell = &maze.cells[index];
-            let color = get_color(&cell);
-            let x_pos = (x * cell_size.0) as f32 - x_offset;
-            let y_pos = (y *  cell_size.0) as f32 - y_offset;
-            commands.spawn((SpriteBundle {
-                transform: Transform::from_xyz(x_pos, y_pos, 0.0),
-                sprite: Sprite {
-                    custom_size: Some(Vec2::new(cell_size.0 as f32,cell_size.0 as f32)),
-                    color,
-                    ..Default::default()},
-                ..Default::default()
-                },
-                Cell {
-                position:(x,y),
-                type_: cell.clone()
-                }
-            ));
+            commands.spawn(get_tile_sprite(x as f32, x_offset, y as f32, y_offset, cell_size.0 as f32, cell));
         }
     }
 }
 
-
+fn get_tile_sprite(x: f32, x_offset: f32, y: f32, y_offset: f32, cell_size: f32, cell: &CellState) -> (SpriteBundle, Cell){
+        let color = get_color(&cell);
+        let x_pos = (x * cell_size) - x_offset;
+        let y_pos = (y *  cell_size) - y_offset;
+        (SpriteBundle {
+        transform: Transform::from_xyz(x_pos, y_pos, 0.0),
+        sprite: Sprite {
+            custom_size: Some(Vec2::new(cell_size, cell_size)),
+            color,
+            ..Default::default()},
+        ..Default::default()
+        },
+        Cell {
+        position: (x as usize,y as usize),
+        type_: cell.clone()
+        }
+    )
+}
 pub fn update_maze(maze: Res<Maze>, mut query:  Query<(&Cell, &mut Sprite)>) {
     for (cell, mut sprite) in query.iter_mut() {
+
         match cell.type_ {
             CellState::END | CellState::START | CellState::WALL => {
 
